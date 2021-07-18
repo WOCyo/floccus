@@ -31,7 +31,6 @@
         <v-btn
           class="flex-grow-1 me-1"
           :to="{ name: routes.NEW_ACCOUNT }"
-          color="white"
           target="_blank">
           <v-icon>
             mdi-plus
@@ -39,11 +38,10 @@
           {{ t('LabelNewAccount') }}
         </v-btn>
         <v-btn
-          color="white"
           :title="t('labelImportExport')"
           :to="{ name: routes.IMPORTEXPORT }"
           target="_blank">
-          <v-icon>mdi-swap-vertical-bold</v-icon>
+          <v-icon>mdi-export</v-icon>
         </v-btn>
       </v-container>
     </template>

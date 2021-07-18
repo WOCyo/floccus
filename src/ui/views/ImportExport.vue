@@ -7,6 +7,7 @@
           {{ t("LabelExport") }}
         </v-card-title>
         <v-card-text>
+          <p>{{ t("DescriptionExport") }}</p>
           <div
             v-for="(account, i) in accounts"
             :key="i">
@@ -28,14 +29,21 @@
           </div>
           <v-btn
             block
+            :disabled="!Object.values(selected).some(Boolean)"
             @click="onTriggerExport">
             <v-icon>mdi-export</v-icon>{{ t('LabelExport') }}
           </v-btn>
         </v-card-text>
+      </v-container>
+    </v-card>
+    <v-card
+      class="options mt-3">
+      <v-container class="pa-5">
         <v-card-title>
           {{ t("LabelImport") }}
         </v-card-title>
         <v-card-text>
+          <p>{{ t("DescriptionImport") }}</p>
           <input
             ref="filePicker"
             type="file"
@@ -56,6 +64,7 @@
 <script>
 import PathHelper from '../../lib/PathHelper'
 import {actions} from '../store'
+import Vue from 'vue'
 
 export default {
   name: 'ImportExport',
@@ -70,6 +79,16 @@ export default {
       return this.$store.state.accounts
     },
   },
+  watch: {
+    accounts(newValue, old) {
+      if (!old || !Object.keys(old).length) {
+        // first time this is set
+        for (const id of Object.keys(this.accounts)) {
+          Vue.set(this.selected, id, true)
+        }
+      }
+    }
+  },
   methods: {
     getFolderName(rootPath) {
       const pathArray = PathHelper.pathToArray(
@@ -80,6 +99,9 @@ export default {
     async onTriggerExport() {
       try {
         const ids = Object.keys(this.selected).filter(id => Boolean(this.selected[id]))
+        if (!ids.length) {
+          return
+        }
         await this.$store.dispatch(actions.EXPORT_ACCOUNTS, ids)
       } catch (e) {
         alert(e.message)

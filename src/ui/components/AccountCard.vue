@@ -6,7 +6,7 @@
       v-if="account.data.syncing"
       v-slot:progress
       :value="account.data.syncing * 100 || 0"
-      :indeterminate="account.data.syncing < 0.01" />
+      :indeterminate="account.data.syncing < 0.1" />
     <v-container class="pa-4">
       <v-row
         no-gutters
@@ -103,6 +103,8 @@
               <v-btn
                 icon
                 small
+                :outlined="account.data.strategy === 'overwrite'"
+                :color="account.data.strategy === 'overwrite'? 'primary' : null"
                 :title="t('LabelSyncUp')"
                 :aria-label="t('LabelSyncUp')"
                 @click="onTriggerSyncUp">
@@ -111,6 +113,8 @@
               <v-btn
                 icon
                 small
+                :outlined="account.data.strategy === 'slave'"
+                :color="account.data.strategy === 'slave'? 'primary' : null"
                 :title="t('LabelSyncDown')"
                 :aria-label="t('LabelSyncDown')"
                 @click="onTriggerSyncDown">
@@ -161,7 +165,7 @@ export default {
         disabled: 'rgb(125, 114, 128)',
         ok: '#3d8e39',
         error: '#8e3939',
-        syncing: 'blue'
+        syncing: '#2196F3'
       },
       statusIcons: {
         disabled: 'mdi-sync-off',

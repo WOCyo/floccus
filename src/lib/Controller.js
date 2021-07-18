@@ -2,6 +2,7 @@ import browser from './browser-api'
 import Account from './Account'
 import LocalTree from './LocalTree'
 import Cryptography from './Crypto'
+import DefunctCryptography from './DefunctCrypto'
 import packageJson from '../../package.json'
 import AccountStorage from './AccountStorage'
 import _ from 'lodash'
@@ -24,9 +25,11 @@ class AlarmManager {
     for (let accountId of accounts) {
       const account = await Account.get(accountId)
       const data = account.getData()
+      const lastSync = data.lastSync || 0
+      const interval = data.syncInterval || DEFAULT_SYNC_INTERVAL
       if (
         Date.now() >
-        (data.syncInterval || DEFAULT_SYNC_INTERVAL) * 1000 * 60 + data.lastSync
+        interval * 1000 * 60 + lastSync
       ) {
         // noinspection ES6MissingAwait
         this.ctl.scheduleSync(accountId)
@@ -83,14 +86,15 @@ export default class Controller {
         currentVersion: packageJson.version
       })
 
-      // TODO: Remove this before next release.
-      const accounts = await Account.getAllAccounts()
-      await Promise.all(accounts.map(account => account.init()))
-      await Promise.all(
-        accounts.map(account =>
-          account.setData({ ...account.getData() })
-        )
-      )
+      // Set flag to switch to new encryption implementation
+      const oldVersion = d.currentVersion.split('.')
+      const e = await browser.storage.local.get('accountsLocked')
+      // eslint-disable-next-line eqeqeq
+      if (e.accountsLocked && oldVersion[0] === '4' && (oldVersion[1] < 5 || (oldVersion[1] == 5 && oldVersion[2] == 0))) {
+        await browser.storage.local.set({
+          rekeyAfterUpdate: true
+        })
+      }
 
       const packageVersion = packageJson.version.split('.')
       const lastVersion = d.currentVersion ? d.currentVersion.split('.') : []
@@ -107,16 +111,23 @@ export default class Controller {
 
   setEnabled(enabled) {
     this.enabled = enabled
+    if (enabled) {
+      // Sync after 7s
+      setTimeout(() => {
+        this.alarms.checkSync()
+      }, 7000)
+    }
   }
 
   async setKey(key) {
     let accounts = await Account.getAllAccounts()
+    await Promise.all(accounts.map(a => a.updateFromStorage()))
     this.key = key
     let hashedKey = await Cryptography.sha256(key)
     let encryptedHash = await Cryptography.encryptAES(
       key,
-      Cryptography.iv,
-      hashedKey
+      hashedKey,
+      'FLOCCUS'
     )
     await browser.storage.local.set({ accountsLocked: encryptedHash })
     if (accounts.length) {
@@ -124,22 +135,45 @@ export default class Controller {
     }
 
     // ...aand unlock it immediately.
-    this.key = key
     this.unlocked = true
     this.setEnabled(true)
   }
 
   async unlock(key) {
     let d = await browser.storage.local.get({ 'accountsLocked': null })
+    let e = await browser.storage.local.get({ 'rekeyAfterUpdate': null })
     if (d.accountsLocked) {
-      let hashedKey = await Cryptography.sha256(key)
-      let decryptedHash = await Cryptography.decryptAES(
-        key,
-        Cryptography.iv,
-        d.accountsLocked
-      )
-      if (decryptedHash !== hashedKey) {
-        throw new Error('The provided key was wrong')
+      if (e.rekeyAfterUpdate) {
+        let hashedKey = await DefunctCryptography.sha256(key)
+        let decryptedHash = await DefunctCryptography.decryptAES(
+          key,
+          DefunctCryptography.iv,
+          d.accountsLocked
+        )
+
+        if (decryptedHash !== hashedKey) {
+          throw new Error('The provided key was wrong')
+        }
+
+        this.unlocked = true
+        this.key = key
+        await this.unsetKey()
+        await this.setKey(key)
+
+        await browser.storage.local.set({
+          rekeyAfterUpdate: null
+        })
+      } else {
+        let hashedKey = await Cryptography.sha256(key)
+        let decryptedHash = await Cryptography.decryptAES(
+          key,
+          d.accountsLocked,
+          'FLOCCUS'
+        )
+
+        if (decryptedHash !== hashedKey) {
+          throw new Error('The provided key was wrong')
+        }
       }
       this.key = key
     }
@@ -152,6 +186,7 @@ export default class Controller {
       throw new Error('Cannot disable encryption without unlocking first')
     }
     let accounts = await Account.getAllAccounts()
+    await Promise.all(accounts.map(a => a.updateFromStorage()))
     this.key = null
     await browser.storage.local.set({ accountsLocked: null })
     await Promise.all(accounts.map(a => a.setData(a.getData())))
@@ -247,7 +282,7 @@ export default class Controller {
     await account.cancelSync()
   }
 
-  async syncAccount(accountId) {
+  async syncAccount(accountId, strategy) {
     this.waiting[accountId] = false
     if (!this.enabled) {
       return
@@ -258,7 +293,7 @@ export default class Controller {
     }
     setTimeout(() => this.updateStatus(), 500)
     try {
-      await account.sync()
+      await account.sync(strategy)
     } catch (error) {
       console.error(error)
     }
@@ -331,6 +366,8 @@ export default class Controller {
             syncing: false,
             error: browser.i18n.getMessage('Error027')
           })
+          // reset cache after interrupted sync
+          await acc.init()
         }
       })
     )

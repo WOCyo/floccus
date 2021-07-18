@@ -1,5 +1,44 @@
 # Changelog
 
+## v4.6.4
+
+### Fixed
+A few fixes to improve syncing accuracy:
+
+- Unidirectional: Don't map UPDATEs to old IDs, but to newly reinserted IDs
+- Scanner: Don't generate UPDATEs for items that have been MOVEd
+- DefaultSyncStrategy: Fix UPDATE vs REMOVE condition
+
+## v4.6.3
+
+Broken release.
+
+## v4.6.2
+
+### Fixed
+- One-time strategy change: Don't get stuck on the wrong sync strategy
+- UX: Highlight default strategy in AccountCards
+
+## v4.6.1
+
+### Fixed
+UX: NextcloudFolders: Detect HTTP redirects
+Improve import/export UX
+messages: Fix sync{Down,Up} wording
+Reimplement Unidirectional strategy
+WebDAV: Accept non-encrypted file in encryption mode
+GoogleDrive: Accept non-encrypted file in encryption mode
+
+## v4.6.0
+
+### New
+- Sync via Google Drive
+- Optionally encrypt your sync file
+- Allow sending client certificates
+
+### Fixed
+- Fix Crypto module
+
 ## v4.5.0
 
 ### New

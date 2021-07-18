@@ -7,11 +7,31 @@ var gulpZip = require('gulp-zip')
 var crx3 = require('crx3')
 var webstoreClient = require('chrome-webstore-upload')
 
+// Provide a dummy credential file for third-party builders
+try {
+  fs.accessSync('./google-api.credentials.json')
+} catch (e) {
+  fs.writeFileSync('./google-api.credentials.json', JSON.stringify({
+    'web': {
+      'client_id': 'yourappidhere.apps.googleusercontent.com',
+      'project_id': 'YOUR PROJECT ID HERE',
+      'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+      'token_uri': 'https://oauth2.googleapis.com/token',
+      'auth_provider_x509_cert_url': 'https://www.googleapis.com/oauth2/v1/certs',
+      'client_secret': 'YOUR CLIENT SECRET HERE',
+      'redirect_uris': [
+        'https://yourappidhere.chromiumapp.org/',
+        'https://yourappidhere.extensions.allizom.org/'
+      ]
+    }
+  }))
+}
+
 const VERSION = require('./package.json').version
 const paths = {
   zip: [
     './**',
-    (process.env['CI'] ? '' : '!') + 'dist/js/test.js',
+    (process.env['CI'] ? './' : '!') + 'dist/js/test.js',
     '!builds/**',
     '!src/**',
     '!node_modules/**',
@@ -19,6 +39,7 @@ const paths = {
     '!ISSUE_TEMPLATE.md',
     '!gulpfile.js',
     '!key.pem',
+    '!android/**',
   ],
   views: './html/*.html',
   entries: 'src/entries/*.js',

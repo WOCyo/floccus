@@ -23,6 +23,7 @@ export interface NextcloudFoldersConfig {
   username: string
   password: string
   serverRoot?: string
+  includeCredentials?: boolean
 }
 
 interface IChildFolder {
@@ -64,6 +65,7 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
       username: 'bob',
       password: 's3cret',
       serverRoot: '',
+      includeCredentials: false,
     }
   }
 
@@ -72,7 +74,7 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
   }
 
   getData():NextcloudFoldersConfig {
-    return { ...this.server }
+    return { ...NextcloudFoldersAdapter.getDefaultValues(), ...this.server }
   }
 
   getLabel():string {
@@ -419,7 +421,7 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
     }
   }
 
-  async loadFolderChildren(folderId:string|number): Promise<TItem[]> {
+  async loadFolderChildren(folderId:string|number, all?: boolean): Promise<TItem[]> {
     if (!this.hasFeatureHashing) {
       return
     }
@@ -430,20 +432,25 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
     if (folder.loaded) {
       return folder.clone(true).children
     }
-    const children = await this._getChildren(folderId, 1)
-    const recurse = async(children) => {
-      return Parallel.each(children, async(child) => {
-        if (!(child instanceof Folder)) {
-          return
-        }
-        if (!child.loaded) {
-          const folderHash = await this._getFolderHash(child.id)
-          child.hashValue = { true: folderHash }
-        }
-        await recurse(child.children)
-      })
+    let children
+    if (all) {
+      children = await this._getChildren(folderId, -1)
+    } else {
+      children = await this._getChildren(folderId, 1)
+      const recurse = async(children) => {
+        return Parallel.each(children, async(child) => {
+          if (!(child instanceof Folder)) {
+            return
+          }
+          if (!child.loaded) {
+            const folderHash = await this._getFolderHash(child.id)
+            child.hashValue = { true: folderHash }
+          }
+          await recurse(child.children)
+        })
+      }
+      await recurse(children)
     }
-    await recurse(children)
     folder.children = children
     folder.loaded = true
     this.tree.createIndex()
@@ -650,7 +657,7 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
    * This is pretty expensive! We need to wait until NcBookmarks has support for
    * querying urls directly
    */
-  async getExistingBookmark(url:string):Promise<false|string|number> {
+  async getExistingBookmark(url:string):Promise<false|Bookmark> {
     if (this.hasFeatureExistenceCheck) {
       const json = await this.sendRequest(
         'GET',
@@ -659,7 +666,7 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
         )}`
       )
       if (json.data.length) {
-        return json.data[0].id
+        return {...json.data[0], parentId: json.data[0].folders[0]}
       } else {
         return false
       }
@@ -667,7 +674,7 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
       await this.getBookmarksList()
       const existing = this.list.find((bookmark) => bookmark.url === url)
       if (!existing) return false
-      return existing.id
+      return existing
     }
   }
 
@@ -679,8 +686,10 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
     return this.bookmarkLock.acquire(bm.url, async() => {
       const existingBookmark = await this.getExistingBookmark(bm.url)
       if (existingBookmark) {
-        bm.id = existingBookmark + ';' + bm.parentId
-        await this.updateBookmark(bm)
+        bm.id = existingBookmark.id + ';' + bm.parentId // We already use the new parentId here, to avoid moving it away from the old location
+        const updatedBookmark = bm.clone()
+        updatedBookmark.title = existingBookmark.title
+        await this.updateBookmark(updatedBookmark)
       } else {
         const body = JSON.stringify({
           url: bm.url,
@@ -729,7 +738,7 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
             (parentId) =>
               parentId && String(parentId) !== String(oldParentId) &&
               // make sure this is not an outdated oldParentId (can happen due to canMergeWith in Scanner)
-              this.tree.findFolder(parentId) && (this.tree.findFolder(parentId).findItemFilter('bookmark', i => i.canMergeWith(newBm)) || !this.tree.findFolder(parentId).loaded)
+              (!this.tree.findFolder(parentId) || this.tree.findFolder(parentId).findItemFilter('bookmark', i => i.canMergeWith(newBm)) || !this.tree.findFolder(parentId).loaded)
           )
           .concat([newBm.parentId]),
         tags: bms[0].tags,
@@ -789,7 +798,7 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
         Promise.race([
           fetch(url, {
             method: verb,
-            credentials: 'omit',
+            credentials: this.server.includeCredentials ? 'include' : 'omit',
             headers: {
               ...(type && { 'Content-type': type }),
               Authorization: 'Basic ' + authString,
@@ -807,6 +816,10 @@ export default class NextcloudFoldersAdapter implements Adapter, BulkImportResou
     } catch (e) {
       if (timedOut) throw e
       throw new Error(browser.i18n.getMessage('Error017'))
+    }
+
+    if (res.redirected) {
+      throw new Error(browser.i18n.getMessage('Error033'))
     }
 
     if (returnRawResponse) {

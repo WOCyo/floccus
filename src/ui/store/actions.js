@@ -66,7 +66,8 @@ export const actionsDefinition = {
     commit(mutations.LOADING_END, 'accounts')
   },
   async [actions.CREATE_ACCOUNT]({commit, dispatch, state}, type) {
-    const account = await Account.create(Account.getDefaultValues(type))
+    const rootFolder = await LocalTree.getAbsoluteRootFolder()
+    const account = await Account.create({...Account.getDefaultValues(type), localRoot: rootFolder.id})
     await dispatch(actions.LOAD_ACCOUNTS)
     return account.id
   },
@@ -99,25 +100,15 @@ export const actionsDefinition = {
   },
   async [actions.TRIGGER_SYNC]({ commit, dispatch, state }, accountId) {
     const background = await browser.runtime.getBackgroundPage()
-    background.syncAccount(accountId)
+    background.controller.syncAccount(accountId)
   },
   async [actions.TRIGGER_SYNC_DOWN]({ commit, dispatch, state }, accountId) {
-    let account = await Account.get(accountId)
-    const strategy = account.getData.strategy
-    await account.setData({...account.getData(), strategy: 'slave' })
     const background = await browser.runtime.getBackgroundPage()
-    await background.syncAccount(accountId)
-    account = await Account.get(accountId)
-    await account.setData({...account.getData(), strategy})
+    await background.controller.syncAccount(accountId, 'slave')
   },
   async [actions.TRIGGER_SYNC_UP]({ commit, dispatch, state }, accountId) {
-    let account = await Account.get(accountId)
-    const strategy = account.getData.strategy
-    await account.setData({...account.getData(), strategy: 'overwrite' })
     const background = await browser.runtime.getBackgroundPage()
-    await background.syncAccount(accountId)
-    account = await Account.get(accountId)
-    await account.setData({...account.getData(), strategy})
+    await background.controller.syncAccount(accountId, 'overwrite')
   },
   async [actions.CANCEL_SYNC]({ commit, dispatch, state }, accountId) {
     const background = await browser.runtime.getBackgroundPage()
